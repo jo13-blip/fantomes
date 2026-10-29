@@ -52,20 +52,32 @@ export async function POST(req: Request) {
     session?.id &&
     session.payment_status === "paid"
   ) {
-    const reponse = await fetch(
-      `${urlBase}/rest/v1/paiements?on_conflict=session_id`,
-      {
-        method: "POST",
-        headers: {
-          apikey: cleBase,
-          "Content-Type": "application/json",
-          Prefer: "resolution=ignore-duplicates",
+    let reponse: Response;
+    try {
+      reponse = await fetch(
+        `${urlBase.trim().replace(/\/+$/, "")}/rest/v1/paiements?on_conflict=session_id`,
+        {
+          method: "POST",
+          headers: {
+            apikey: cleBase.trim(),
+            "Content-Type": "application/json",
+            Prefer: "resolution=ignore-duplicates",
+          },
+          body: JSON.stringify({ session_id: session.id }),
         },
-        body: JSON.stringify({ session_id: session.id }),
-      },
-    );
+      );
+    } catch (e) {
+      return new Response(
+        `Enregistrement impossible : base injoignable (${e instanceof Error ? e.message : "erreur"})`,
+        { status: 500 },
+      );
+    }
     if (!reponse.ok) {
-      return new Response("Enregistrement impossible", { status: 500 });
+      const detail = (await reponse.text()).slice(0, 300);
+      return new Response(
+        `Enregistrement impossible : Supabase a répondu ${reponse.status} ${detail}`,
+        { status: 500 },
+      );
     }
   }
 
