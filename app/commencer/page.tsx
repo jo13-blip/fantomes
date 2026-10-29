@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import { detecter, lireReleve, type Abonnement } from "@/lib/detect";
+import Lettres from "./lettres";
 
 const CLE_STOCKAGE = "fantomes:abonnements";
 
@@ -295,59 +296,4 @@ export default function Commencer() {
                 </span>
               </li>
             ))}
-          </ul>
-
-          {!paye && (
-            <div className="mt-8 border-2 border-encre p-5">
-              <p className="font-titre text-xl font-extrabold">
-                {verrouilles.length > 0
-                  ? `Il en reste ${verrouilles.length} à découvrir.`
-                  : "Ton audit complet."}
-              </p>
-              <p className="mt-2">
-                L&apos;audit complet affiche tous les montants et prépare une
-                lettre de résiliation pour chaque abonnement.
-              </p>
-              <button
-                type="button"
-                onClick={payer}
-                disabled={enCours}
-                className="mt-4 block w-full rounded-xl bg-tampon px-6 py-4 text-center text-lg font-semibold text-papier disabled:opacity-60"
-              >
-                {enCours ? "Redirection…" : "Débloquer l'audit complet · 19 €"}
-              </button>
-              <p className="mt-2 text-center text-sm opacity-70">
-                Paiement unique. Aucun abonnement.
-              </p>
-              {erreurPaiement && (
-                <p role="alert" className="mt-3 border-l-4 border-tampon pl-3">
-                  {erreurPaiement}
-                </p>
-              )}
-            </div>
-          )}
-
-          {paye && (
-            <div className="mt-8 border-2 border-encre p-5">
-              <p className="font-titre text-xl font-extrabold">
-                Les lettres de résiliation arrivent.
-              </p>
-              <p className="mt-2">
-                Elles seront ajoutées à cette page très bientôt, pour chaque
-                abonnement de la liste.
-              </p>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setAbonnements(null)}
-            className="mt-6 block w-full text-center underline"
-          >
-            Essayer avec un autre fichier
-          </button>
-        </section>
-      )}
-    </main>
-  );
-}
+          
