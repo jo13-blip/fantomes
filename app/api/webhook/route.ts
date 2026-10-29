@@ -25,10 +25,11 @@ function signatureValide(corps: string, entete: string, secret: string) {
 export async function POST(req: Request) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   const urlBase = process.env.SUPABASE_URL;
-  const cleBase = process.env.SUPABASE_SECRET_KEY;
-  if (!secret || !urlBase || !cleBase) {
+  const cleBrute = process.env.SUPABASE_SECRET_KEY;
+  if (!secret || !urlBase || !cleBrute) {
     return new Response("Configuration manquante", { status: 500 });
   }
+  const cleBase = cleBrute.trim();
 
   const corps = await req.text();
   const entete = req.headers.get("stripe-signature") ?? "";
@@ -52,17 +53,22 @@ export async function POST(req: Request) {
     session?.id &&
     session.payment_status === "paid"
   ) {
+    const enTetes: Record<string, string> = {
+      apikey: cleBase,
+      "Content-Type": "application/json",
+      Prefer: "resolution=ignore-duplicates",
+    };
+    if (cleBase.startsWith("eyJ")) {
+      enTetes.Authorization = `Bearer ${cleBase}`;
+    }
+
     let reponse: Response;
     try {
       reponse = await fetch(
         `${urlBase.trim().replace(/\/+$/, "")}/rest/v1/paiements?on_conflict=session_id`,
         {
           method: "POST",
-          headers: {
-            apikey: cleBase.trim(),
-            "Content-Type": "application/json",
-            Prefer: "resolution=ignore-duplicates",
-          },
+          headers: enTetes,
           body: JSON.stringify({ session_id: session.id }),
         },
       );
