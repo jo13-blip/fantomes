@@ -5,6 +5,8 @@ import { detecter, lireReleve, type Abonnement } from "@/lib/detect";
 
 const CLE_STOCKAGE = "fantomes:abonnements";
 
+type Statut = "aucun" | "verification" | "paye" | "echec";
+
 const euros = (n: number) =>
   n.toLocaleString("fr-FR", {
     style: "currency",
@@ -21,26 +23,67 @@ function decoder(buffer: ArrayBuffer): string {
   }
 }
 
+function restaurer(): Abonnement[] | null {
+  try {
+    const brut = window.sessionStorage.getItem(CLE_STOCKAGE);
+    const liste: unknown = brut ? JSON.parse(brut) : null;
+    return Array.isArray(liste) ? (liste as Abonnement[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Commencer() {
   const [abonnements, setAbonnements] = useState<Abonnement[] | null>(null);
   const [erreur, setErreur] = useState("");
-  const [paiement, setPaiement] = useState<"ok" | "annule" | null>(null);
+  const [annule, setAnnule] = useState(false);
+  const [statut, setStatut] = useState<Statut>("aucun");
   const [enCours, setEnCours] = useState(false);
   const [erreurPaiement, setErreurPaiement] = useState("");
 
   useEffect(() => {
-    const retour = new URLSearchParams(window.location.search).get("paiement");
+    const params = new URLSearchParams(window.location.search);
+    const retour = params.get("paiement");
+
+    if (retour === "annule") {
+      setAnnule(true);
+      const liste = restaurer();
+      if (liste) setAbonnements(liste);
+      return;
+    }
+
     if (retour === "ok") {
-      setPaiement("ok");
-    } else if (retour === "annule") {
-      setPaiement("annule");
-      try {
-        const brut = window.sessionStorage.getItem(CLE_STOCKAGE);
-        const liste: unknown = brut ? JSON.parse(brut) : null;
-        if (Array.isArray(liste)) setAbonnements(liste as Abonnement[]);
-      } catch {
-        /* rien à restaurer */
+      const liste = restaurer();
+      if (liste) setAbonnements(liste);
+      const id = params.get("session_id");
+      if (!id) {
+        setStatut("echec");
+        return;
       }
+      setStatut("verification");
+      let arret = false;
+      (async () => {
+        for (let i = 0; i < 10 && !arret; i++) {
+          try {
+            const reponse = await fetch(
+              `/api/verifier?session_id=${encodeURIComponent(id)}`,
+              { cache: "no-store" },
+            );
+            const donnees: { paye?: boolean } = await reponse.json();
+            if (donnees.paye) {
+              if (!arret) setStatut("paye");
+              return;
+            }
+          } catch {
+            /* on réessaie */
+          }
+          await new Promise((fin) => setTimeout(fin, 1500));
+        }
+        if (!arret) setStatut("echec");
+      })();
+      return () => {
+        arret = true;
+      };
     }
   }, []);
 
@@ -90,45 +133,78 @@ export default function Commencer() {
     }
   }
 
+  const paye = statut === "paye";
   const total = abonnements
     ? abonnements.reduce((somme, a) => somme + a.montantAnnuel, 0)
     : 0;
-  const visibles = abonnements ? abonnements.slice(0, 2) : [];
-  const verrouilles = abonnements ? abonnements.slice(2) : [];
+  const visibles = abonnements ? (paye ? abonnements : abonnements.slice(0, 2)) : [];
+  const verrouilles = abonnements && !paye ? abonnements.slice(2) : [];
 
-  if (paiement === "ok") {
+  const entete = (
+    <a href="/" className="font-titre text-xl font-extrabold tracking-tight">
+      Fantômes
+    </a>
+  );
+
+  if (statut === "verification") {
     return (
       <main className="mx-auto w-full max-w-md px-6 pb-16 pt-10">
-        <a href="/" className="font-titre text-xl font-extrabold tracking-tight">
-          Fantômes
-        </a>
+        {entete}
         <h1 className="font-titre mt-10 text-[2rem] font-extrabold leading-[1.1]">
-          Paiement reçu. Merci.
+          Vérification de ton paiement…
         </h1>
         <p className="mt-4 text-lg leading-relaxed">
-          Nous vérifions ton paiement. Le déblocage de ton audit complet
-          arrive à la prochaine étape.
+          Ça prend quelques secondes. Ne ferme pas cette page.
         </p>
+      </main>
+    );
+  }
+
+  if (statut === "echec") {
+    return (
+      <main className="mx-auto w-full max-w-md px-6 pb-16 pt-10">
+        {entete}
+        <h1 className="font-titre mt-10 text-[2rem] font-extrabold leading-[1.1]">
+          Paiement pas encore confirmé.
+        </h1>
+        <p className="mt-4 text-lg leading-relaxed">
+          Nous n&apos;avons pas encore reçu la confirmation de ta banque. Recharge
+          la page dans une minute. Si le problème continue, ne paie pas une
+          deuxième fois : reviens nous voir plus tard.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-6 block w-full rounded-xl bg-tampon px-6 py-4 text-center text-lg font-semibold text-papier"
+        >
+          Recharger la page
+        </button>
       </main>
     );
   }
 
   return (
     <main className="mx-auto w-full max-w-md px-6 pb-16 pt-10">
-      <a href="/" className="font-titre text-xl font-extrabold tracking-tight">
-        Fantômes
-      </a>
+      {entete}
 
-      {paiement === "annule" && (
+      {annule && (
         <p className="mt-6 border-l-4 border-tampon pl-3">
           Paiement annulé. Tu n&apos;as pas été débité.
+        </p>
+      )}
+
+      {paye && (
+        <p className="mt-6 border-l-4 border-tampon pl-3">
+          Paiement confirmé. Merci. Ton audit complet est débloqué.
         </p>
       )}
 
       {abonnements === null && (
         <section className="mt-10">
           <h1 className="font-titre text-[2rem] font-extrabold leading-[1.1]">
-            Dépose ton relevé bancaire.
+            {paye
+              ? "Redépose ton relevé pour voir l'audit complet."
+              : "Dépose ton relevé bancaire."}
           </h1>
           <p className="mt-4 text-lg leading-relaxed">
             Choisis le fichier CSV de ton compte principal, sur 3 à 12 mois.
@@ -221,33 +297,47 @@ export default function Commencer() {
             ))}
           </ul>
 
-          <div className="mt-8 border-2 border-encre p-5">
-            <p className="font-titre text-xl font-extrabold">
-              {verrouilles.length > 0
-                ? `Il en reste ${verrouilles.length} à découvrir.`
-                : "Ton audit complet."}
-            </p>
-            <p className="mt-2">
-              L&apos;audit complet affiche tous les montants et prépare une
-              lettre de résiliation pour chaque abonnement.
-            </p>
-            <button
-              type="button"
-              onClick={payer}
-              disabled={enCours}
-              className="mt-4 block w-full rounded-xl bg-tampon px-6 py-4 text-center text-lg font-semibold text-papier disabled:opacity-60"
-            >
-              {enCours ? "Redirection…" : "Débloquer l'audit complet · 19 €"}
-            </button>
-            <p className="mt-2 text-center text-sm opacity-70">
-              Paiement unique. Aucun abonnement.
-            </p>
-            {erreurPaiement && (
-              <p role="alert" className="mt-3 border-l-4 border-tampon pl-3">
-                {erreurPaiement}
+          {!paye && (
+            <div className="mt-8 border-2 border-encre p-5">
+              <p className="font-titre text-xl font-extrabold">
+                {verrouilles.length > 0
+                  ? `Il en reste ${verrouilles.length} à découvrir.`
+                  : "Ton audit complet."}
               </p>
-            )}
-          </div>
+              <p className="mt-2">
+                L&apos;audit complet affiche tous les montants et prépare une
+                lettre de résiliation pour chaque abonnement.
+              </p>
+              <button
+                type="button"
+                onClick={payer}
+                disabled={enCours}
+                className="mt-4 block w-full rounded-xl bg-tampon px-6 py-4 text-center text-lg font-semibold text-papier disabled:opacity-60"
+              >
+                {enCours ? "Redirection…" : "Débloquer l'audit complet · 19 €"}
+              </button>
+              <p className="mt-2 text-center text-sm opacity-70">
+                Paiement unique. Aucun abonnement.
+              </p>
+              {erreurPaiement && (
+                <p role="alert" className="mt-3 border-l-4 border-tampon pl-3">
+                  {erreurPaiement}
+                </p>
+              )}
+            </div>
+          )}
+
+          {paye && (
+            <div className="mt-8 border-2 border-encre p-5">
+              <p className="font-titre text-xl font-extrabold">
+                Les lettres de résiliation arrivent.
+              </p>
+              <p className="mt-2">
+                Elles seront ajoutées à cette page très bientôt, pour chaque
+                abonnement de la liste.
+              </p>
+            </div>
+          )}
 
           <button
             type="button"
